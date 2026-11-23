@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated at runtime
+data/
+exports/
+*.xlsx
+
+# Local secrets
+.env
+
+# Local notes (not part of the project)
+COMMIT_PLAN.md
