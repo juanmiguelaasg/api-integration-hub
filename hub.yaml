@@ -1,0 +1,69 @@
+# API Integration Hub – connected systems and integrations.
+# Use ${VAR} or ${VAR:-default} to read secrets and URLs from environment variables.
+
+settings:
+  database: data/hub.db         # SQLite: sync runs, sync state, health checks, sprints, stories
+  export_dir: exports           # where Excel reports are written
+  timeout_seconds: 10
+  retries: 2                    # retries on connection errors and HTTP 5xx
+  retry_delay_seconds: 0.5
+  scheduler_tick_seconds: 30    # how often the desktop app looks for due integrations
+
+systems:
+  - name: CRM
+    description: Customer relationship management – source of customer master data
+    base_url: ${CRM_URL:-http://127.0.0.1:8100/crm}
+    health: /health
+    auth: {type: api_key, header: X-API-Key, value: "${CRM_API_KEY:-demo-crm-key}"}
+
+  - name: ERP
+    description: Enterprise resource planning – business partners for invoicing
+    base_url: ${ERP_URL:-http://127.0.0.1:8100/erp}
+    health: /health
+    auth: {type: bearer, token: "${ERP_TOKEN:-demo-erp-token}"}
+
+  - name: Helpdesk
+    description: Ticketing system – customer-reported problems
+    base_url: ${HELPDESK_URL:-http://127.0.0.1:8100/helpdesk}
+    health: /health
+    auth: {type: basic, username: hub, password: "${HELPDESK_PASSWORD:-demo}"}
+
+integrations:
+  - name: CRM customers → ERP partners
+    description: Active CRM customers become ERP business partners; changes are pushed as updates.
+    source:
+      system: CRM
+      path: /api/customers
+      filter: {status: active}
+    target:
+      system: ERP
+      path: /api/partners
+      method: POST
+      update_method: PUT
+      update_path: /api/partners/{target_id}
+      id_field: id
+    key: id
+    mapping:
+      external_id: {from: id, transform: str}
+      name: "{first_name} {last_name}"
+      email: {from: email, transform: [strip, lower]}
+      company: company.name
+      country_code: {from: company.country, transform: upper}
+      source_system: {const: CRM}
+    schedule_minutes: 5
+
+  - name: Helpdesk tickets → Scrum backlog
+    description: Open high-priority tickets become user stories in the product backlog.
+    source:
+      system: Helpdesk
+      path: /api/tickets
+      items: tickets
+      filter: {status: open, priority: [critical, high]}
+    target:
+      scrum: backlog
+    key: id
+    mapping:
+      title: "Ticket #{id}: {subject}"
+      points: {from: priority, map: {critical: 5, high: 3}, default: 2}
+      description: "Reported by {customer_email} (priority: {priority})"
+    schedule_minutes: 15
